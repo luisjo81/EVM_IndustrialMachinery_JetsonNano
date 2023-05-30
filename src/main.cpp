@@ -18,12 +18,9 @@ int main(int argc, char* argv[]) {
        cerr << " <fl/r1> <fh/r2> <sampling_rate> <chrom_attenuation>" << endl;
        return -1;
     }
-    
-    // Get OpenCV build information for feature support
-    // cout << getBuildInformation() << endl; 
-
+  
     int status;
-    // string dataDir = "./vid/";
+
     string name;
     string delimiter = "/";
     size_t last = 0; size_t next = 0;
@@ -41,7 +38,6 @@ int main(int argc, char* argv[]) {
     float fl, fh;
     float enu, den;
     
-    // utils::fs::remove_all(resultsDir);
     if (!utils::fs::createDirectory(resultsDir))
         cout << "Not able to create the directory or directory already created";
         cout << endl;

@@ -4,7 +4,6 @@
 #include <opencv2/videoio.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/core/cuda.hpp>
-// #include <opencv2/cudaimgproc.hpp>
 #include <iostream>
 #include <string>
 #include <sstream>

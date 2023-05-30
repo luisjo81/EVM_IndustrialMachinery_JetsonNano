@@ -63,17 +63,7 @@ int amplify_spatial_Gdown_temporal_ideal(string inFile, string name, string outD
 
     itime = omp_get_wtime();
 
-    // string name;
-    // string delimiter = "/";
     string bar(BAR_WIDTH, '=');
-
-    // size_t last = 0; size_t next = 0;
-    // while ((next = inFile.find(delimiter, last)) != string::npos) {
-    //     last = next + 1;
-    // }
-
-    // name = inFile.substr(last);
-    // name = name.substr(0, name.find("."));
 
     cout << bar << endl;
     cout << "Processing " << inFile << "." << endl;
@@ -307,14 +297,6 @@ int amplify_spatial_lpyr_temporal_butter(string inFile, string name, string outD
     // string delimiter = "/";
     string bar(BAR_WIDTH, '=');
 
-    // size_t last = 0; size_t next = 0;
-    // while ((next = inFile.find(delimiter, last)) != string::npos) {
-    //     last = next + 1;
-    // }
-
-    // name = inFile.substr(last);
-    // name = name.substr(0, name.find("."));
-
     float progress = 0;
 
     cout << bar << endl;
@@ -441,9 +423,6 @@ int amplify_spatial_lpyr_temporal_butter(string inFile, string name, string outD
         cout << "] " << int(progress * 100.0) << " %\r";
         cout.flush();
 
-        // Mat frame, normalizedframe, rgbframe, out_frame, output;
-        // vector<Mat> filtered(nLevels);
-
         // Compute the Laplace pyramid
         pyr = buildLpyrfromGauss(video_array[i], max_ht); // Has information in the upper levels
 
@@ -470,8 +449,6 @@ int amplify_spatial_lpyr_temporal_butter(string inFile, string name, string outD
                 lp1_h.release(); pyr_h.release(); pre_h.release();
                 lowpass1[l] = lp1_s / high_b[0];
                 lp1_s.release();
-                // lowpass1[l] = lp1_r;
-                // lp1_r.release();
 
                 lp2_l = -low_b[1] * lowpass2[l].clone();
                 lowpass2[l].release();
@@ -485,8 +462,6 @@ int amplify_spatial_lpyr_temporal_butter(string inFile, string name, string outD
                 lp2_l.release(); pyr_l.release(); pre_l.release();
                 lowpass2[l] = lp2_s / low_b[0];
                 lp2_s.release();
-                // lowpass2[l] = lp2_r;
-                // lp2_r.release();
 
                 pyr[l] = lowpass1[l] - lowpass2[l];
             }
@@ -537,8 +512,6 @@ int amplify_spatial_lpyr_temporal_butter(string inFile, string name, string outD
         cvtColor(frame, rgbframe, COLOR_RGB2BGR);
         frame.release();
         videoOut.write(rgbframe);
-        // video_array[i].release();
-        // video_array[i-1] = rgbframe;
         rgbframe.release();
     }
     vector<Mat>().swap(pyr_prev);
@@ -583,17 +556,7 @@ int amplify_spatial_lpyr_temporal_ideal(string inFile, string name, string outDi
 
     itime = omp_get_wtime();
 
-    // string name;
-    // string delimiter = "/";
     string bar(BAR_WIDTH, '=');
-
-    // size_t last = 0; size_t next = 0;
-    // while ((next = inFile.find(delimiter, last)) != string::npos) {
-    //     last = next + 1;
-    // }
-
-    // name = inFile.substr(last);
-    // name = name.substr(0, name.find("."));
 
     cout << bar << endl;
     cout << "Processing " << inFile << "." << endl;
@@ -805,17 +768,6 @@ int amplify_spatial_lpyr_temporal_iir(string inFile, string name, string outDir,
 
     itime = omp_get_wtime();
 
-    // string name;
-    // string delimiter = "/";
-
-    // size_t last = 0; size_t next = 0;
-    // while ((next = inFile.find(delimiter, last)) != string::npos) {
-    //     last = next + 1;
-    // }
-
-    // name = inFile.substr(last);
-    // name = name.substr(0, name.find("."));
-
     // Creates the result video name
     string outName = outDir + name + "-iir-r1-" + to_string(r1) + "-r2-" +
         to_string(r2) + "-alpha-" + to_string(alpha) + "-lambda_c-" + to_string(lambda_c) +
@@ -918,9 +870,7 @@ int amplify_spatial_lpyr_temporal_iir(string inFile, string name, string outDir,
         // Compute the laplacian pyramid
         pyr = buildLpyrfromGauss(ntscframe, max_ht);
 
-        // Temporal filtering
-        // lowpass1 = (1-r1)*lowpass1 + r1*pyr;
-        // lowpass2 = (1-r2)*lowpass2 + r2*pyr;
+
 #pragma omp parallel for shared(r1, r2, lowpass1, lowpass2, pyr, filtered)
         for (int level = 0; level < nLevels; level++) {
 
@@ -1045,7 +995,6 @@ vector<Mat> build_GDown_stack(vector<Mat> video_array, int startIndex, int endIn
             vector<Mat> pyr_output;
             frame = video_array[i];
 
-            // pyr_output = buildPyramidGpu(ntscframe, level + 1);
             buildPyramid(frame, pyr_output, level + 1, BORDER_REFLECT101);
             frame.release();
             GDown_stack[i] = pyr_output[level].clone();
@@ -1116,9 +1065,6 @@ vector<Mat> ideal_bandpassing(vector<Mat> input, int dim, double wl, double wh, 
         cout << "Exceed maximun dimension" << endl;
         exit(-1);
     }
-
-    // Printing the cut frequencies
-    //cout << "F1: " + to_string(wl) + " F2: " + to_string(wh) << endl;
 
     // Number of frames in the video
     // Represents time
@@ -1310,7 +1256,6 @@ vector<Mat> buildLpyrfromGauss(Mat image, int levels) {
         pyrUp(gaussianPyramid[l+1], expandedPyramid, Size(gaussianPyramid[l].cols, gaussianPyramid[l].rows), BORDER_REFLECT101);
         laplacianPyramid[l] = gaussianPyramid[l] - expandedPyramid;
         expandedPyramid.release();
-        // gaussianPyramid[l].release();
     }
 
     laplacianPyramid[levels-1] = gaussianPyramid[levels-1];
@@ -1462,21 +1407,7 @@ vector<vector<Mat>> ideal_bandpassing_lpyr(vector<vector<Mat>>& input, int dim, 
             }
         }
     }
-
-    /*
-    cout << "0: " << tmp.at<double>(0, 0) << endl;
-    cout << "1: " << tmp.at<double>(0, 1) << endl;
-    cout << "2: " << tmp.at<double>(0, 2) << endl;
-    cout << "3: " << tmp.at<double>(0, 3) << endl;
-    cout << "4: " << tmp.at<double>(0, 4) << endl;
-    cout << "5: " << tmp.at<double>(0, 5) << endl;
-    cout << "6: " << tmp.at<double>(0, 6) << endl;
-    cout << "7: " << tmp.at<double>(0, 7) << endl;
-    cout << "8: " << tmp.at<double>(0, 8) << endl;
-    cout << "9: " << tmp.at<double>(0, 9) << endl;
-    cout << "10: " << tmp.at<double>(0, 10) << endl;
-    */
-    
+  
     dft(tmp, tmp, DFT_ROWS | DFT_COMPLEX_OUTPUT);
 
     // Filtering the video matrix with a mask
@@ -1524,4 +1455,3 @@ vector<vector<Mat>> ideal_bandpassing_lpyr(vector<vector<Mat>>& input, int dim, 
 
     return filtered;
 }
-

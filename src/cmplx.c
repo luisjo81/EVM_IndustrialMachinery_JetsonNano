@@ -80,24 +80,9 @@ extern double sin ( double );
 extern double sqrt ( double );
 extern double frexp ( double, int * );
 extern double ldexp ( double, int );
-//int isnan ( double );
-//void cdiv ( cmplx *, cmplx *, cmplx * );
-//void cadd ( cmplx *, cmplx *, cmplx * );
-//#else
-//double fabs(), cabs_e(), sqrt(), atan2(), cos(), sin();
-//double sqrt(), frexp(), ldexp();
-//int isnan();
-//void cdiv(), cadd();
-//#endif
 
 extern double MAXNUM, MACHEP, PI, PIO2, INFINITY, NAN;
-/*
-typedef struct
-	{
-	double r;
-	double i;
-	}cmplx;
-*/
+
 cmplx czero = {0.0, 0.0};
 extern cmplx czero;
 cmplx cone = {1.0, 0.0};
@@ -137,7 +122,6 @@ void cmul(	register cmplx* a, register cmplx* b, cmplx* c )
 void cdiv( register cmplx* a, register cmplx* b, cmplx* c)
 {
 	double y, p, q, w;
-
 
 	y = a->r * a->r  +  a->i * a->i;
 	p = b->r * a->r  +  b->i * a->i;

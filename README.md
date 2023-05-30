@@ -1,1 +1,2 @@
-# Eulerian_Video_Magnification_On_Jetson_Nano
+# evm-cpp-jetson
+The Eulerian Video Magnification algorithm applied to a Jetson Nano device with OpenCV, CUDA optimization, and OpenMP
