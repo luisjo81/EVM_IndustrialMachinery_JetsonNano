@@ -24,7 +24,8 @@ int main(int argc, char* argv[]) {
     string name;
     string delimiter = "/";
     size_t last = 0; size_t next = 0;
-    string resultsDir = "./Results/";
+    string resultsDir = "./results/";
+    string logDir = "./logs/";
     string dataDir = argv[1];
 
     int method = stoi(argv[2]);
@@ -39,7 +40,11 @@ int main(int argc, char* argv[]) {
     float enu, den;
     
     if (!utils::fs::createDirectory(resultsDir))
-        cout << "Not able to create the directory or directory already created";
+        cout << "Not able to create the results directory or directory already created";
+        cout << endl;
+
+    if (!utils::fs::createDirectory(logDir))
+        cout << "Not able to create the log directory or directory already created";
         cout << endl;
 
     if (!utils::fs::exists(dataDir)) {
@@ -54,49 +59,19 @@ int main(int argc, char* argv[]) {
     name = dataDir.substr(last);
     name = name.substr(0, name.find("."));
 
-    cout << "Cuda #N " << cuda::getCudaEnabledDeviceCount() << endl;
-    cout << "OpenMP Max Threads: " <<  omp_get_max_threads() << endl;
 
     switch (method)
-    {
-    case 0:
-        enu = stof(fl_str.substr(0, fl_str.find("/")));
-        den = stof(fl_str.substr(fl_str.find("/")+1));
-        fl = enu / den;
-        enu = stof(fh_str.substr(0, fh_str.find("/")));
-        den = stof(fh_str.substr(fh_str.find("/")+1));
-        fh = enu / den;
-        status = amplify_spatial_Gdown_temporal_ideal(dataDir, name, resultsDir, 
-            alpha, level, fl, fh, samplingRate, chromAttenuation);
-        break;
-    
+    {   
     case 1:
         fl = stof(fl_str);
         fh = stof(fh_str);
         status = amplify_spatial_lpyr_temporal_butter(dataDir, name, resultsDir,
             alpha, lambda, fl, fh, samplingRate, chromAttenuation);
         break;
-
-    case 2:
-        fl = stof(fl_str);
-        fh = stof(fh_str);
-        status = amplify_spatial_lpyr_temporal_ideal(dataDir, name, resultsDir,
-            alpha, lambda, fl, fh, samplingRate, chromAttenuation);
-        break;
-
-    case 3:
-        fl = stof(fl_str);
-        fh = stof(fh_str);
-        status = amplify_spatial_lpyr_temporal_iir(dataDir, name, resultsDir,
-            alpha, lambda, fl, fh, chromAttenuation);
-        break;
     
     default:
         cerr << "Incorrect selected method, options are:" << endl;
-        cerr << "0 - Color magnification" << endl;
-        cerr << "1 - Motion magnification Butterworth" << endl;
-        cerr << "2 - Motion magnification Ideal" << endl;
-        cerr << "3 - Motion magnification IIR (Does't work)" << endl;
+        cerr << "1 - Motion magnification Butterworth (only one available for this application)" << endl;
         return -1;
     }
 

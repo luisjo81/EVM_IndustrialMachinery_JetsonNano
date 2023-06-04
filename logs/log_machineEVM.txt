@@ -1,0 +1,23 @@
+[2023-06-03 18:20:50 CST] Computer Specs 
+                          RAM: 11819 MB 
+                          CPU Cores: 8 
+                          Architecture: x86_64 
+[2023-06-03 18:20:50 CST] Analysis Started 
+                          Input file: ./vids/machine1.mp4 
+                          Output file: ./results/machineEVM.avi 
+[2023-06-03 18:20:50 CST] Eulerian Video Magnification Parameters 
+                          Filter: Butterworth 
+                          Alpha: 100.000000 
+                          Lambda: 90.000000 
+                          Chrome Attenuation: 1.000000 
+[2023-06-03 18:20:50 CST] Opening video sample 
+[2023-06-03 18:20:50 CST] Extracting video information 
+                          Height: 1080 
+                          Width: 1920 
+                          Frame rate: 29 
+                          Number of frames: 450 
+[2023-06-03 18:20:50 CST] Video opened correctly 
+                          Time: 14.528587 s 
+                          Used memory: 3080 MB 
+                          Total time: 137.43 s 
+[2023-06-03 18:23:08 CST] Process finished correctly !!! 

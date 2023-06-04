@@ -14,19 +14,10 @@ using namespace cv;
 Video processing functions
 */
 
-// Color Magnification
-int amplify_spatial_Gdown_temporal_ideal(string inFile, string name, string outDir, float alpha, int level, 
-	float fl, float fh, int samplingRate, float chromAttenuation);
-
 // Motion Magnification
 int amplify_spatial_lpyr_temporal_butter(string inFile, string name, string outDir, double alpha, double lambda_c,
 	double fl, double fh, int samplingRate, double chromAttenuation);
 
-int amplify_spatial_lpyr_temporal_ideal(string inFile, string name, string outDir, double alpha, double lambda_c, 
-    double fl, double fh, double samplingRate, double chromAttenuation);
-
-int amplify_spatial_lpyr_temporal_iir(string inFile, string name, string outDir, double alpha, double lambda_c, 
-    double r1, double r2, double chromAttenuation); // --NOT WORKING--
 
 /*
 Spatial filter functions

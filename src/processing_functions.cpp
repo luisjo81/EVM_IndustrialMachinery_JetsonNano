@@ -1,11 +1,16 @@
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <sstream>
 #include <vector>
 #include <numeric>
 #include <cmath>
-
+#include <time.h>
 #include <omp.h>
+#include <thread>
+#include <sys/utsname.h>
+#include "sys/types.h"
+#include "sys/sysinfo.h"
 
 #include <opencv2/core.hpp>
 #include <opencv2/videoio.hpp>
@@ -37,221 +42,16 @@ extern "C" int butter_coeff(int, int, double, double);
 constexpr auto MAX_FILTER_SIZE = 5;
 constexpr auto BAR_WIDTH = 70;
 
+time_t my_time = time(NULL);
 
-/**
-* Spatial Filtering : Gaussian blurand down sample
-* Temporal Filtering : Ideal bandpass
-*
-* Copyright(c) 2021 Tecnologico de Costa Rica.
-*
-* Authors: Eduardo Moya Bello, Ki - Sung Lim
-* Date : April 2021
-*
-* This work was based on a project EVM
-*
-* Original copyright(c) 2011 - 2012 Massachusetts Institute of Technology,
-* Quanta Research Cambridge, Inc.
-*
-* Original authors : Hao - yu Wu, Michael Rubinstein, Eugene Shih,
-* License : Please refer to the LICENCE file (MIT license)
-* Original date : June 2012
-**/
-int amplify_spatial_Gdown_temporal_ideal(string inFile, string name, string outDir, float alpha,
-    int level, float fl, float fh, int samplingRate, float chromAttenuation)
-{   
-    double itime, etime;
+ofstream log_file;
 
-    itime = omp_get_wtime();
-
-    string bar(BAR_WIDTH, '=');
-
-    cout << bar << endl;
-    cout << "Processing " << inFile << "." << endl;
-
-    // Creates the result video name
-    string outName = outDir + name + "-ideal-from-" + to_string(fl) + "-to-" +
-        to_string(fh) + "-alpha-" + to_string(alpha) + "-level-" + to_string(level) +
-        "-chromAtn-" + to_string(chromAttenuation) + ".avi";
-
-    // Read video
-    // Create a VideoCapture object and open the input file
-    // If the input is the web camera, pass 0 instead of the video file name
-    // string str = "filesrc location=" + inFile + 
-    //     " ! qtdemux ! queue ! h264parse ! omxh264dec ! nvvidconv ! video/x-raw,format=BGRx ! queue ! videoconvert ! queue ! video/x-raw,format=BGR ! appsink";
-
-    VideoCapture video(inFile, CAP_FFMPEG);
-
-    // Check if camera opened successfully
-    if (!video.isOpened()) {
-        cout << "Error opening video stream or file" << endl;
-        return -1;
-    }
-
-    // Extracting video info
-    int vidHeight = (int)video.get(CAP_PROP_FRAME_HEIGHT);
-    int vidWidth = (int)video.get(CAP_PROP_FRAME_WIDTH);
-    int nChannels = 3;
-    int fr = (int)video.get(CAP_PROP_FPS);
-    int len = (int)video.get(CAP_PROP_FRAME_COUNT);
-    int startIndex = 0;
-    int endIndex = len - 10;
-
-    // Testing values
-    cout << "Video information: Height-" << vidHeight << " Width-" << vidWidth
-        << " FrameRate-" << fr << " Frames-" << len << endl;
-
-    #if defined(HAVE_OPENCV_CUDACODEC) 
-    VideoWriter videoOut;
-    if (vidWidth < vidHeight) {
-        videoOut.open(outName, CAP_FFMPEG, VideoWriter::fourcc('H','2','6','4'), fr,
-        Size(vidWidth, vidHeight), true);
-    }
-    else {
-        string gst_out = "appsrc ! video/x-raw, format=BGR, width=" + to_string(vidWidth) + 
-            ", height=" + to_string(vidHeight) + 
-            " ! queue ! videoconvert ! video/x-raw, format=RGBA !"
-            " nvvidconv ! nvv4l2h264enc maxperf-enable=1 ! h264parse ! qtmux ! filesink location=" + outName;
-        videoOut.open(gst_out, CAP_GSTREAMER, VideoWriter::fourcc('H','2','6','4'), fr, 
-            Size(vidWidth, vidHeight), true);
-    }
-    #else
-    // Write video
-    // Define the codec and create VideoWriter object
-    VideoWriter videoOut(outName, CAP_FFMPEG, VideoWriter::fourcc('H','2','6','4'), fr,
-        Size(vidWidth, vidHeight), true);
-    #endif
-
-    // Decoding and reading the video
-    cout << "Reading video ";
-    auto start = high_resolution_clock::now();
-    // Video array
-    vector<Mat> video_array(endIndex - startIndex);
-    for (int i = startIndex; i < endIndex; i++) {
-        // Capture frame-by-frame
-        Mat frame;
-        video.read(frame);
-        // video >> frame;
-        video_array[i] = frame.clone();
-        frame.release();
-    }
-    // When everything done, release the video capture and write object
-    video.release();
-
-    #pragma omp parallel for shared(video_array)
-    for (int i = startIndex; i < endIndex; i++) {
-        // Color conversion GBR 2 NTSC
-        Mat frame, rgbframe;
-        cvtColor(video_array[i], rgbframe, COLOR_BGR2RGB);
-        video_array[i].release();
-        frame = im2double(rgbframe);
-        video_array[i] = rgb2ntsc(frame).clone();
-        frame.release();
-        rgbframe.release();
-    }
-    // Get ending timepoint
-    auto stop = high_resolution_clock::now();
-    // Get duration. Substart timepoints to 
-    // get durarion. To cast it to proper unit
-    // use duration cast method
-    auto duration = duration_cast<microseconds>(stop - start);
-    cout << "- Time: " << duration.count() << " microseconds" << endl;
-
-    // Compute Gaussian blur stack
-    cout << "Spatial filtering ";
-    // Get starting timepoint
-    start = high_resolution_clock::now();
-    vector<Mat> Gdown_stack = build_GDown_stack(video_array, startIndex, endIndex, level);
-    // Get ending timepoint
-    stop = high_resolution_clock::now();
-    // Get duration. Substart timepoints to 
-    // get durarion. To cast it to proper unit
-    // use duration cast method
-    duration = duration_cast<microseconds>(stop - start);
-    cout << "- Time: " << duration.count() << " microseconds" << endl;
-
-    // Getting the final Gdown Stack sizes same as Matlab code
-    //cout << "GDown Stack Size: len-" + to_string(Gdown_stack.size()) +
-    //    " rows-" + to_string(Gdown_stack[0].rows) +
-    //    " cols-" + to_string(Gdown_stack[0].cols) +
-    //    " channels-" + to_string(Gdown_stack[0].channels()) << endl;
-
-    // Temporal filtering
-    cout << "Temporal filtering ";
-    // Get starting timepoint
-    start = high_resolution_clock::now();
-    vector<Mat> filtered_stack = ideal_bandpassing(Gdown_stack, 1, fl, fh, samplingRate);
-    // Get ending timepoint
-    stop = high_resolution_clock::now();
-    // Get duration. Substart timepoints to get durarion.
-    duration = duration_cast<microseconds>(stop - start);
-    cout << "- Time: " << duration.count() << " microseconds"<< endl;
-
-    // Amplify color channels in NTSC
-    // Render on the input video to make the output video
-    cout << "Rendering and amplifying... ";
-    // Get starting timepoint
-    start = high_resolution_clock::now();
-
-    Scalar color_amp(alpha, alpha * chromAttenuation, alpha * chromAttenuation);
-    Size img_size(vidWidth, vidHeight);//the dst image size,e.g.100x100
-
-    #pragma omp parallel for shared(video_array, filtered_stack) \
-        firstprivate(color_amp, img_size)
-    for (int i = startIndex; i < endIndex; i++) {
-        Mat frame, frame_result, filtered, rgbframe, out_frame;
-
-        multiply(filtered_stack[i], color_amp, frame_result);
-        filtered_stack[i].release();
-        resize(frame_result, filtered, img_size, 0, 0, INTER_CUBIC);//resize image
-        frame_result.release();
-        frame = filtered + video_array[i];
-        filtered.release();
-        video_array[i].release();
-
-        frame = ntsc2rgb(frame);
-        threshold(frame, out_frame, 0.0f, 0.0f, THRESH_TOZERO);
-        threshold(out_frame, frame, 1.0f, 1.0f, THRESH_TRUNC);
-        out_frame.release();
-
-        rgbframe = im2uint8(frame);
-        frame.release();
-        cvtColor(rgbframe, out_frame, COLOR_RGB2BGR);
-        rgbframe.release();
-        filtered_stack[i] = out_frame.clone();
-        out_frame.release();
-    }
-    vector<Mat>().swap(video_array);
-
-    // Get ending timepoint
-    stop = high_resolution_clock::now();
-    // Get duration. Substart timepoints to get durarion.
-    duration = duration_cast<microseconds>(stop - start);
-    cout << "Finished - Time: " << duration.count() << " microseconds"<< endl;
-
-    // Encoding and writing the video
-    cout << "Writing video ";
-    start = high_resolution_clock::now();
-    for (int i = startIndex; i < endIndex; i++) {
-        // Write the frame into the file 'outcpp.avi'
-        videoOut.write(filtered_stack[i]);
-    }
-    vector<Mat>().swap(filtered_stack);
-    // When everything done, release the video capture and write object
-    videoOut.release();
-    // Get ending timepoint
-    stop = high_resolution_clock::now();
-    duration = duration_cast<microseconds>(stop - start);
-    cout << "- Time: " << duration.count() << " microseconds" << endl;
-
-    etime = omp_get_wtime();
-
-    cout << endl;
-    cout << "Finished. Elapsed time: " << etime - itime << " secs." << endl;
-    cout << bar << endl;
-
-    return 0;
+std::string timeStamp(){
+    std::ostringstream strStream;
+    std::time_t t = std::time(nullptr);
+    strStream<< "[" << std::put_time(std::localtime(&t), "%F %T %Z") << "] ";
+    return strStream.str();
 }
-
 
 /**
 * Spatial Filtering: Laplacian pyramid
@@ -262,6 +62,9 @@ int amplify_spatial_Gdown_temporal_ideal(string inFile, string name, string outD
 *
 * Authors: Eduardo Moya Bello, Ki - Sung Lim
 * Date : April 2021
+*
+* Modified: Luis Martínez Ramírez
+* Date : June 2023
 *
 * This work was based on a project EVM
 *
@@ -300,12 +103,54 @@ int amplify_spatial_lpyr_temporal_butter(string inFile, string name, string outD
     float progress = 0;
 
     cout << bar << endl;
-    cout << "Processing " << inFile << "." << endl;
-
+    
     // Creates the result video name
-    string outName = outDir + name + "-butter-from-" + to_string(fl) + "-to-" +
-        to_string(fh) + "-alpha-" + to_string(alpha) + "-lambda_c-" + to_string(lambda_c) +
-        "-chromAtn-" + to_string(chromAttenuation) + ".avi";
+    string outName = outDir + "machineEVM.avi";
+
+    struct sysinfo memInfo;
+    sysinfo (&memInfo);
+
+    //Total physical memory
+    long long totalPhysMem = memInfo.totalram;
+    //Multiply in next statement to avoid int overflow on right hand side...
+    totalPhysMem *= memInfo.mem_unit;
+    totalPhysMem = totalPhysMem/(1024*1024);
+
+    //Architecture
+    struct utsname osInfo{};
+    uname(&osInfo);
+
+    const auto CPUcores = std::thread::hardware_concurrency();
+    
+    cout << " " << endl;
+    cout << "-----------Computer Specs-----------" << endl;
+    cout << "RAM: " << totalPhysMem << " MB" << endl;
+    cout << "CPU Cores: " << CPUcores << endl;
+    cout << "Architecture: " << osInfo.machine << endl;
+    cout << "------------------------------------" << endl;
+
+    cout << " " << endl;
+    cout << "-----------EVM Parameters-----------" << endl;
+    cout << "Filter: " << "Butterworth" << endl;
+    cout << "Alpha: " << to_string(alpha) << endl;
+    cout << "Lambda: " << to_string(lambda_c) << endl;
+    cout << "Chrome Attenuation: " << to_string(chromAttenuation) << endl;
+    cout << "------------------------------------" << endl;
+
+    log_file.open ("logs/log_machineEVM.txt");
+    log_file <<  timeStamp() << "Computer Specs" << " \n";
+    log_file << "                          RAM: " << totalPhysMem << " MB \n";
+    log_file << "                          CPU Cores: " << CPUcores << " \n";
+    log_file << "                          Architecture: " << osInfo.machine << " \n";
+    log_file <<  timeStamp() << "Analysis Started" << " \n";
+    log_file << "                          Input file: " << inFile << " \n";
+    log_file << "                          Output file: " << outDir << "machineEVM.avi \n";
+    log_file <<  timeStamp() << "Eulerian Video Magnification Parameters" << " \n";
+    log_file << "                          Filter: " << "Butterworth" << " \n";
+    log_file << "                          Alpha: " << to_string(alpha) << " \n";
+    log_file << "                          Lambda: " << to_string(lambda_c) << " \n";
+    log_file << "                          Chrome Attenuation: " << to_string(chromAttenuation) << " \n";
+    log_file <<  timeStamp() << "Opening video sample" << " \n";
 
     // Read video
     // Create a VideoCapture object and open the input file
@@ -315,10 +160,13 @@ int amplify_spatial_lpyr_temporal_butter(string inFile, string name, string outD
     // Check if camera opened successfully
     if (!video.isOpened()) {
         cout << "Error opening video stream or file" << endl;
+        //log_file <<  timeStamp() << "Error opening video stream or file" << " \n";
+        //log_file.close();
         return -1;
     }
 
     // Extracting video info
+    log_file <<  timeStamp() << "Extracting video information" << " \n";
     int vidHeight = (int)video.get(CAP_PROP_FRAME_HEIGHT);
     int vidWidth = (int)video.get(CAP_PROP_FRAME_WIDTH);
     int nChannels = 3;
@@ -326,10 +174,19 @@ int amplify_spatial_lpyr_temporal_butter(string inFile, string name, string outD
     int len = (int)video.get(CAP_PROP_FRAME_COUNT);
     int startIndex = 0;
     int endIndex = len - 10;
-
+    
     // Video data
-    cout << "Video information: Height-" << vidHeight << " Width-" << vidWidth
-        << " FrameRate-" << fr << " Frames-" << len << endl;
+    cout << " " << endl;
+    cout << "---------Video Information----------" << endl;
+    cout << "Height : " << vidHeight <<  endl;
+    cout << "Width: " << vidWidth << endl;
+    cout << "Frame rate: " << fr << endl;
+    cout << "Number of frames: " << len << endl;
+    cout << "------------------------------------" << endl;
+    log_file << "                          Height: " << to_string(vidHeight) << " \n";
+    log_file << "                          Width: " << to_string(vidWidth) << " \n";
+    log_file << "                          Frame rate: " << to_string(fr) << " \n";
+    log_file << "                          Number of frames: " << to_string(len) << " \n";
 
     #if defined(HAVE_OPENCV_CUDACODEC)
     VideoWriter videoOut;
@@ -352,8 +209,12 @@ int amplify_spatial_lpyr_temporal_butter(string inFile, string name, string outD
         Size(vidWidth, vidHeight), true);
     #endif
 
+    log_file <<  timeStamp() << "Video opened correctly" << " \n";
+
     // Decoding and reading the video
-    cout << "Reading video ";
+    cout << " " << endl;
+    cout << "-----------Reading Video------------" << endl;
+    
     auto start = high_resolution_clock::now();
     // Video array
     vector<Mat> video_array(endIndex - startIndex);
@@ -383,7 +244,9 @@ int amplify_spatial_lpyr_temporal_butter(string inFile, string name, string outD
     }
     auto stop = high_resolution_clock::now();
     auto duration = duration_cast<microseconds>(stop - start);
-    cout << "- Time: " << duration.count() << " microseconds" << endl;
+    cout << "Elapsed time: " << duration.count()*(0.000001) << " s" << endl;
+    cout << "------------------------------------" << endl;
+    log_file << "                          Time: " << to_string(duration.count()*(0.000001)) << " s \n";
 
     // Compute maximum pyramid height for every frame
     int max_ht = 1 + maxPyrHt(vidWidth, vidHeight, MAX_FILTER_SIZE, MAX_FILTER_SIZE);
@@ -523,434 +386,25 @@ int amplify_spatial_lpyr_temporal_butter(string inFile, string name, string outD
 
     etime = omp_get_wtime();
 
-    cout << endl;
-    cout << "Finished. Elapsed time: " << etime - itime << " secs." << endl;
+    long long physMemUsed = memInfo.totalram - memInfo.freeram;
+    //Multiply in next statement to avoid int overflow on right hand side...
+    physMemUsed *= memInfo.mem_unit;
+    physMemUsed = physMemUsed/(1024*1024);
+
+
+    cout << " " << endl;
+    cout << "----------Resources data------------" << endl;
+    cout << "Used memory: " << physMemUsed << " MB" << endl;
+    cout << "Total time: " << etime - itime << " s" << endl;
+    cout << "Logfile created at: logs/log_" << name << ".txt" << endl;
+    cout << "------------------------------------" << endl;
+    cout << "Processing finished correctly !!!" << endl;
     cout << bar << std::endl;
 
-    return 0;
-}
-
-
-/**
-* Spatial Filtering : Laplacian pyramid
-* Temporal Filtering : Ideal bandpass
-*
-* Copyright(c) 2021 Tecnologico de Costa Rica.
-*
-* Authors: Eduardo Moya Bello, Ki - Sung Lim
-* Date : June 2021
-*
-* This work was based on a project EVM
-*
-* Original copyright(c) 2011 - 2012 Massachusetts Institute of Technology,
-* Quanta Research Cambridge, Inc.
-*
-* Original authors : Hao - yu Wu, Michael Rubinstein, Eugene Shih,
-* License : Please refer to the LICENCE file (MIT license)
-* Original date : June 2012
-*/
-int amplify_spatial_lpyr_temporal_ideal(string inFile, string name, string outDir, double alpha,
-    double lambda_c, double fl, double fh, double samplingRate, double chromAttenuation) {
-
-    double itime, etime;
-
-    itime = omp_get_wtime();
-
-    string bar(BAR_WIDTH, '=');
-
-    cout << bar << endl;
-    cout << "Processing " << inFile << "." << endl;
-
-    // Creates the result video name
-    string outName = outDir + name + "-ideal-from-" + to_string(fl) + "-to-" +
-        to_string(fh) + "-alpha-" + to_string(alpha) + "-lambda_c-" + to_string(lambda_c) +
-        "-chromAtn-" + to_string(chromAttenuation) + ".avi";
-
-    // Create a VideoCapture object and open the input file
-    VideoCapture video(inFile, CAP_FFMPEG);
-
-    // Check if video opened successfully
-    if (!video.isOpened()) {
-        std::cout << "Error opening video stream or file" << endl;
-        return -1;
-    }
-
-    // Extract video info
-    int vidHeight = (int)video.get(CAP_PROP_FRAME_HEIGHT);
-    int vidWidth = (int)video.get(CAP_PROP_FRAME_WIDTH);
-    int nChannels = 3;
-    int fr = (int)video.get(CAP_PROP_FPS);
-    int len = (int)video.get(CAP_PROP_FRAME_COUNT);
-    int startIndex = 0;
-    int endIndex = len - 10;
-
-    // Testing values
-    cout << "Video information: Height-" << vidHeight << " Width-" << vidWidth
-        << " FrameRate-" << fr << " Frames-" << len << endl;
-
-    #if defined(HAVE_OPENCV_CUDACODEC)
-    VideoWriter videoOut;
-    if (vidWidth + 50 < vidHeight) {
-        videoOut.open(outName, CAP_FFMPEG, VideoWriter::fourcc('H','2','6','4'), fr,
-        Size(vidWidth, vidHeight), true);
-    }
-    else {
-        string gst_out = "appsrc ! video/x-raw, format=BGR, width=" + to_string(vidWidth) + 
-            ", height=" + to_string(vidHeight) + 
-            " ! queue ! videoconvert ! video/x-raw, format=RGBA !"
-            " nvvidconv ! nvv4l2h264enc maxperf-enable=1 ! h264parse ! qtmux ! filesink location=" + outName;
-        videoOut.open(gst_out, CAP_GSTREAMER, VideoWriter::fourcc('H','2','6','4'), fr, 
-            Size(vidWidth, vidHeight), true);
-    }
-    #else
-    // Write video
-    // Define the codec and create VideoWriter object
-    VideoWriter videoOut(outName, CAP_FFMPEG, VideoWriter::fourcc('H','2','6','4'), fr,
-        Size(vidWidth, vidHeight), true);
-    #endif
-
-    // Decoding and reading the video
-    cout << "Reading video ";
-    auto start = high_resolution_clock::now();
-    // Video array
-    vector<Mat> video_array(endIndex - startIndex);
-    for (int i = startIndex; i < endIndex; i++) {
-        // Capture frame-by-frame
-        Mat frame;
-        video.read(frame);
-        video_array[i] = frame;
-        frame.release();
-    }
-    // When everything done, release the video capture and write object
-    video.release();
-
-    #pragma omp parallel for shared(video_array)
-    for (int i = startIndex; i < endIndex; i++) {
-        // Color conversion GBR 2 NTSC
-        Mat frame, rgbframe;
-        cvtColor(video_array[i], rgbframe, COLOR_BGR2RGB);
-        video_array[i].release();
-        frame = im2double(rgbframe);
-        rgbframe.release();
-        video_array[i] = rgb2ntsc(frame);
-        frame.release();
-    }
-    auto stop = high_resolution_clock::now();
-    auto duration = duration_cast<microseconds>(stop - start);
-    cout << "- Time: " << duration.count() << " microseconds" << endl;
-
-    // Compute maximum pyramid height for every frame
-    int max_ht = 1 + maxPyrHt(vidWidth, vidHeight, MAX_FILTER_SIZE, MAX_FILTER_SIZE);
-
-    // Compute Laplacian pyramid stack
-    cout << "Spatial filtering ";
-    // Get starting timepoint
-    start = high_resolution_clock::now();
-    vector<vector<Mat>> pyr_stack = build_Lpyr_stack(video_array, startIndex, endIndex, max_ht);
-    // Get ending timepoint
-    stop = high_resolution_clock::now();
-    duration = duration_cast<microseconds>(stop - start);
-    cout << "- Time: " << duration.count() << " microseconds" << endl;
-
-    // Temporal filtering
-    cout << "Temporal filtering ";
-    // Get starting timepoint
-    start = high_resolution_clock::now();
-    vector<vector<Mat>> filteredStack = ideal_bandpassing_lpyr(pyr_stack, 3, fl, fh, samplingRate);
-    vector<vector<Mat>>().swap(pyr_stack);
-    // Get ending timepoint
-    stop = high_resolution_clock::now();
-    duration = duration_cast<microseconds>(stop - start);
-    cout << "- Time: " << duration.count() << " microseconds" << endl;
-
-    Scalar colorAmp(alpha, alpha * chromAttenuation, alpha * chromAttenuation);
-    Size img_size(vidWidth, vidHeight);//the dst image size,e.g.100x100
-    vector<Mat> filtered_stack(endIndex - startIndex);
-
-    #pragma omp parallel shared(video_array, filteredStack, filtered_stack)
-    {
-        // Amplify color channels in NTSC
-        #pragma omp for collapse(2) firstprivate(colorAmp)
-        for (int i = startIndex; i < endIndex; i++) {
-            for (int levelFrame = 0; levelFrame < filteredStack[0].size(); levelFrame++) {
-                multiply(filteredStack[i][levelFrame], colorAmp, filteredStack[i][levelFrame]);
-            }
-        }
-
-        #pragma omp for firstprivate(img_size)
-        for (int i = startIndex; i < endIndex; i++) {
-            Mat frame, rgbframe, filt_ind, filtered, out_frame;
-
-            filt_ind = filteredStack[i][0];
-            filteredStack[i][0].release();
-            vector<Mat>().swap(filteredStack[i]);
-
-            resize(filt_ind, filtered, img_size, 0, 0, INTER_CUBIC);//resize image
-
-            filtered = filtered + video_array[i].clone();
-            video_array[i].release();
-
-            frame = ntsc2rgb(filtered);
-            filtered.release();
-
-            threshold(frame, out_frame, 0.0f, 0.0f, THRESH_TOZERO);
-            threshold(out_frame, frame, 1.0f, 1.0f, THRESH_TRUNC);
-
-            rgbframe = im2uint8(frame);
-            frame.release();
-            cvtColor(rgbframe, out_frame, COLOR_RGB2BGR);
-            rgbframe.release();
-            filtered_stack[i] = out_frame;
-            out_frame.release();
-        }
-    }
-    vector<vector<Mat>>().swap(filteredStack);
-    vector<Mat>().swap(video_array);
-
-    // Get ending timepoint
-    stop = high_resolution_clock::now();
-    // Get duration. Substart timepoints to get durarion.
-    duration = duration_cast<microseconds>(stop - start);
-    cout << "Finished - Time: " << duration.count() << " microseconds"<< endl;
-    // Encoding and writing the video
-    cout << "Writing video ";
-    start = high_resolution_clock::now();
-    for (int i = startIndex; i < endIndex; i++) {
-        // Write the frame into the file 'outcpp.avi'
-        videoOut.write(filtered_stack[i]);
-        filtered_stack[i].release();
-    }
-    vector<Mat>().swap(filtered_stack);
-    videoOut.release();
-    // Get ending timepoint
-    stop = high_resolution_clock::now();
-    duration = duration_cast<microseconds>(stop - start);
-    cout << "- Time: " << duration.count() << " microseconds" << endl;
-
-    etime = omp_get_wtime();
-
-    cout << endl;
-    cout << "Finished. Elapsed time: " << etime - itime << " secs." << endl;
-    cout << bar << endl;
-
-    return 0;
-}
-
-
-/**
-* Spatial Filtering : Laplacian pyramid
-* Temporal Filtering : substraction of two IIR lowpass filters
-*
-* y1[n] = r1*x[n] + (1-r1)*y1[n-1]
-* y2[n] = r2*x[n] + (1-r2)*y2[n-1]
-* (r1 > r2)
-*
-* y[n] = y1[n] - y2[n]
-* 
-* Copyright(c) 2021 Tecnologico de Costa Rica.
-*
-* Authors: Eduardo Moya Bello, Ki - Sung Lim
-* Date : June 2021
-*
-* This work was based on a project EVM
-*
-* Original copyright(c) 2011 - 2012 Massachusetts Institute of Technology,
-* Quanta Research Cambridge, Inc.
-*
-* Original authors : Hao - yu Wu, Michael Rubinstein, Eugene Shih,
-* License : Please refer to the LICENCE file (MIT license)
-* Original date : June 2012
-*/
-int amplify_spatial_lpyr_temporal_iir(string inFile, string name, string outDir, double alpha,
-    double lambda_c, double r1, double r2, double chromAttenuation) {
-
-    double itime, etime;
-
-    itime = omp_get_wtime();
-
-    // Creates the result video name
-    string outName = outDir + name + "-iir-r1-" + to_string(r1) + "-r2-" +
-        to_string(r2) + "-alpha-" + to_string(alpha) + "-lambda_c-" + to_string(lambda_c) +
-        "-chromAtn-" + to_string(chromAttenuation) + ".avi";
-
-    float progress = 0;
-    for (int i = 0; i < BAR_WIDTH; ++i) {
-        std::cout << "=";
-    }
-    std::cout << std::endl;
-    std::cout << "Processing " << inFile << "." << endl;
-
-    // Create a VideoCapture object and open the input file
-    // If the input is the web camera, pass 0 instead of the video file name
-    //VideoCapture video(0);
-    VideoCapture video(inFile);
-
-    // Check if video opened successfully
-    if (!video.isOpened()) {
-        std::cout << "Error opening video stream or file" << endl;
-        return -1;
-    }
-
-    // Extract video info
-    int vidHeight = (int)video.get(CAP_PROP_FRAME_HEIGHT);
-    int vidWidth = (int)video.get(CAP_PROP_FRAME_WIDTH);
-    int nChannels = 3;
-    int fr = (int)video.get(CAP_PROP_FPS);
-    int len = (int)video.get(CAP_PROP_FRAME_COUNT);
-    int startIndex = 0;
-    int endIndex = len - 10;
-
-    // Video data
-    cout << "Video information: Height-" << vidHeight << " Width-" << vidWidth
-        << " FrameRate-" << fr << " Frames-" << len << endl;
-
-    // Define the codec and create VideoWriter object
-    VideoWriter videoOut(outName, VideoWriter::fourcc('M', 'J', 'P', 'G'), fr,
-        Size(vidWidth, vidHeight));
-
-    // Variables to be used
-    Mat frame1, rgbframe1, ntscframe1;
-
-    // First frame
-    video >> frame1;
-
-    // If the frame is empty, throw an error
-    if (frame1.empty())
-        return -1;
-
-    // Color conversion GBR 2 NTSC
-    cvtColor(frame1, rgbframe1, COLOR_BGR2RGB);
-    rgbframe1 = im2double(rgbframe1);
-    ntscframe1 = rgb2ntsc(rgbframe1);
-
-    // Compute maximum pyramid height for every frame
-    int max_ht = 1 + maxPyrHt(vidWidth, vidHeight, MAX_FILTER_SIZE, MAX_FILTER_SIZE);
-
-    // Compute the Laplacian pyramid
-    vector<Mat> pyr = buildLpyrfromGauss(ntscframe1, max_ht);
-
-    vector<Mat> lowpass1 = pyr;
-    vector<Mat> lowpass2 = pyr;
-
-    // Writing the first frame (not processed)
-    videoOut.write(frame1);
-
-    int nLevels = (int)pyr.size();
-
-    // Scalar vector for color attenuation in YIQ (NTSC) color space
-    Scalar color_amp(1.0f, chromAttenuation, chromAttenuation);
-
-    for (int i = startIndex; i < endIndex; i++) {
-        progress = (float)i / endIndex;
-
-        std::cout << "[";
-        int pos = (int)(BAR_WIDTH * progress);
-        for (int j = 0; j < BAR_WIDTH; ++j) {
-            if (j < pos) std::cout << "=";
-            else if (j == pos) std::cout << ">";
-            else std::cout << " ";
-        }
-        std::cout << "] " << int(progress * 100.0) << " %\r";
-        std::cout.flush();
-
-        Mat frame, rgbframe, ntscframe, out_frame, output;
-        vector<Mat> filtered(nLevels);
-        // Capture frame-by-frame
-        video >> frame;
-
-        // If the frame is empty, break immediately
-        if (frame.empty())
-            break;
-
-        // Color conversion GBR 2 NTSC
-        cvtColor(frame, rgbframe, COLOR_BGR2RGB);
-        rgbframe = im2double(rgbframe);
-        ntscframe = rgb2ntsc(rgbframe);
-
-        // Compute the laplacian pyramid
-        pyr = buildLpyrfromGauss(ntscframe, max_ht);
-
-
-#pragma omp parallel for shared(r1, r2, lowpass1, lowpass2, pyr, filtered)
-        for (int level = 0; level < nLevels; level++) {
-
-            Mat lp1_lp = (1-r1) * lowpass1[level].clone();
-            Mat lp1_pyr = r1 * pyr[level].clone();
-            lowpass1[level] = lp1_lp.clone() + lp1_pyr.clone();
-
-            Mat lp2_lp =  (1-r2) * lowpass2[level].clone();
-            Mat lp2_pyr = r2 * pyr[level].clone();
-            lowpass2[level] = lp2_lp.clone() + lp2_pyr.clone();
-
-            Mat temp_result = lowpass1[level].clone() - lowpass2[level].clone();
-            filtered[level] = temp_result.clone();
-        }
-
-        // Amplifying filtering variables
-        // The factor to boost alpha above the bound we have in the paper. (for better visualization)
-        double exaggeration_factor = 2.0f;
-        double delta = lambda_c / 8.0f / (1.0f + alpha);
-        double lambda = pow(pow(vidHeight, 2.0f) + pow(vidWidth, 2.0f), 0.5f) / 3.0f; // is experimental constant
-
-        // Go one level down on pyramid each stage
-#pragma omp parallel for shared(filtered, alpha, exaggeration_factor, delta, lambda)
-        for (int l = nLevels - 1; l >= 0; l--) {
-            // Compute modified alpha for this level
-            double currAlpha = lambda / delta / 8.0f - 1.0f;
-            currAlpha = currAlpha * exaggeration_factor;
-
-            Mat mat_result;
-
-            if (l == max_ht - 1 || l == 0) { // ignore the highest and lowest frecuency band
-                Size mat_sz(filtered[l].cols, filtered[l].rows);
-                mat_result = Mat::zeros(mat_sz, CV_32FC3);
-            }
-            else if (currAlpha > alpha) { // representative lambda exceeds lambda_c
-                mat_result = alpha * filtered[l].clone();
-            }
-            else {
-                mat_result = currAlpha * filtered[l].clone();
-            }
-            filtered[l] = mat_result.clone();
-
-            lambda = lambda / 2.0f;
-        }
-
-
-        // Render on the input video
-        output = reconLpyr(filtered);
-
-        multiply(output, color_amp, output);
-
-        output = ntscframe.clone() + output.clone();
-
-        rgbframe = ntsc2rgb(output);
-
-        threshold(rgbframe, rgbframe, 0.0f, 0.0f, THRESH_TOZERO);
-        threshold(rgbframe, rgbframe, 1.0f, 1.0f, THRESH_TRUNC);
-
-        frame = im2uint8(rgbframe);
-
-        cvtColor(frame, frame, COLOR_RGB2BGR);
-
-        videoOut.write(frame);
-    }
-
-    // When everything done, release the video capture and write object
-    video.release();
-    videoOut.release();
-
-    etime = omp_get_wtime();
-
-    std::cout << std::endl;
-    std::cout << "Finished. Elapsed time: " << etime - itime << " secs." << std::endl;
-    for (int i = 0; i < BAR_WIDTH; ++i) {
-        std::cout << "=";
-    }
-    std::cout << std::endl;
-
-    // Closes all the frames
-    cv::destroyAllWindows();
+    log_file << "                          Used memory: " << physMemUsed << " MB \n";
+    log_file << "                          Total time: " << etime - itime << " s \n";
+    log_file <<  timeStamp() << "Process finished correctly !!!" << " \n";
+    log_file.close();
 
     return 0;
 }
